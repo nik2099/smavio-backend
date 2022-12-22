@@ -53,6 +53,8 @@ Route::get('/', function(){
 Route::post('/register', [AuthController::class, 'register']);
 // Login
 Route::post('/login', [AuthController::class, 'login']);
+// App Login
+Route::post('/appLogin', [AuthController::class, 'appLogin']);
 // Forget Password
 Route::post('/forget-password', [AuthController::class, 'forget_password']);
 // Reset Password

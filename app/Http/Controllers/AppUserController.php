@@ -63,7 +63,7 @@ class AppUserController extends Controller
 	        			
 	        			$device->updated_at = Carbon::now();
 	        			$device->save();
-	        			return response()->json(['campaign_id'=>$campaign_id,'history'=>$history,'campaign_name'=>$campaign->name,'update_available'=>true,'success'=>true], 200);		
+	        			return response()->json(['campaign_id'=>$campaign_id,'history'=>$history,'campaign_name'=>$campaign->name,'update_available'=>true,'success'=>true,'error'=>''], 200);		
 	        		}else{
 	        			$history->campaign_id = $campaign_id;
 	        			$history->updated_at = Carbon::now();
@@ -71,7 +71,7 @@ class AppUserController extends Controller
 	        			
 	        			$device->updated_at = Carbon::now();
 	        			$device->save();
-	        			return response()->json(['campaign_id'=>$campaign_id,'history'=>$history,'campaign_name'=>$campaign->name,'update_available'=>false,'success'=>true], 200);
+	        			return response()->json(['campaign_id'=>$campaign_id,'history'=>$history,'campaign_name'=>$campaign->name,'update_available'=>false,'success'=>true,'error'=>''], 200);
 	        		}	
 	        	}
 	        	
@@ -108,7 +108,7 @@ class AppUserController extends Controller
 	        			$device->campaign_id = $campaign->campaign_id;
 	        			$device->save();
 	        			
-	        			return response()->json(['campaign_id'=>$campaign->campaign_id,'campaign_name'=>$campaign->name, 'update_available'=>false, 'success'=>true, 'msg'=> "Campaign Update Successfully"], 200);		
+	        			return response()->json(['campaign_id'=>$campaign->campaign_id,'campaign_name'=>$campaign->name, 'update_available'=>false, 'success'=>true, 'msg'=> "Campaign Update Successfully", 'error'=>''], 200);		
 	        		
 	        		}else{
 	        			return response()->json(['error'=>'campaign already updated','success'=>false], 200);
@@ -127,18 +127,11 @@ class AppUserController extends Controller
         $validated = $request->validate([
             'name' => 'required',
             'email' => 'required|email',
-            'campaign_id' => 'required|exists:campaigns,id',
-            'deviceid' => 'required'
+            'campaign_id' => 'required|exists:campaigns,id'
         ]);
         
-        $device_uuid = $request->deviceid;
-        
-        $device = Device::where('device_uuid', $device_uuid)->first();
-        $user = $device->user;
-        $campaign = Campaign::find($request->campaign_id);
-        $campaign_id = (!empty($campaign->campaign_id)) ? $campaign->campaign_id : $campaign->id;
+       
         $subscription = new CampaignSubscription();
-        $subscription->user_id = $user->id;
         $subscription->campaign_id = $request->campaign_id;
         $subscription->name = $request->name;
         $subscription->email = $request->email;

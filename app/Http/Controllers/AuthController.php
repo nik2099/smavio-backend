@@ -92,7 +92,8 @@ class AuthController extends Controller
    
         if($validator->fails()){
             return response()->json([
-                'errors' => ['Invalid credentials!']
+                'errors' => ['Invalid credentials!'],
+		        'success'=>false
                 // 'errors' =>$validator->errors()
             ],Response::HTTP_UNAUTHORIZED);
         }
@@ -102,7 +103,8 @@ class AuthController extends Controller
         if(!Auth::attempt($credentials)){
         	
             return response()->json([
-                'errors' => ['Invalid credentials!']
+                'errors' => ['Invalid credentials!'],
+		        'success'=>false
             ],Response::HTTP_UNAUTHORIZED);
             
         }
@@ -140,7 +142,8 @@ class AuthController extends Controller
 	        	if($parent->plan->no_of_device <= $parent->alldevices()->where('device_type','app')->whereIn('status',[1,2])->count()){
 	        		
 	        		return response()->json([
-		                'errors' => [$parent->alldevices()->whereIn('status',[1,2])->count().'Devices already login. Please contect your Admin']
+		                'errors' => [$parent->alldevices()->whereIn('status',[1,2])->count().'Devices already login. Please contect your Admin'],
+		                'success'=>false
 		            ],Response::HTTP_UNAUTHORIZED);
 	        	}
 	        }
@@ -161,7 +164,8 @@ class AuthController extends Controller
         }else{
         	if($user->user_id != null){
         		return response()->json([
-		                'errors' => ["You are subuser, you don't have permission to login in user panel"]
+		                'errors' => ["You are subuser, you don't have permission to login in user panel"],
+		                'success'=>false
 		            ],Response::HTTP_UNAUTHORIZED);
         		
         	}
@@ -215,6 +219,149 @@ class AuthController extends Controller
         $billingProfile = $user->billing_profile;
         $userDetails = isset($billingProfile) ? array_merge($user->toArray(), $billingProfile->toArray()) : $user->toArray();
         $userDetails['site_url']= env('SITE_URL', "https://sandbox.smavio.de");
+        $userDetails['errors']=[];
+        $userDetails['success']=true;
+        return response()->json($userDetails, 200)->withCookie($cookie);
+    }
+    
+    public function appLogin(Request $request){
+        
+        $validator = Validator::make($request->all(), [
+            'email' => 'email|required',
+            'password' => 'string|min:6|max:18|required'
+        ]);
+   
+        if($validator->fails()){
+            return response()->json([
+                'errors' => ['Invalid credentials!'],
+		        'success'=>false
+                // 'errors' =>$validator->errors()
+            ],200);
+        }
+        
+        $credentials = $request->only('email', 'password');
+        
+        if(!Auth::attempt($credentials)){
+        	
+            return response()->json([
+                'errors' => ['Invalid credentials!'],
+		        'success'=>false
+            ],200);
+            
+        }
+        
+        $user = User::where('id', Auth::id())->with(['parent_user', 'sub_users', 'sub_user_invitations', 'plan'])->first();
+         //return response()->json($user, 200);
+        
+        $parent_id = $user->id;
+        $device_type = ($request->get('device_type') == 'app')?'app':'web';
+        
+        if($device_type == 'app'){
+	        
+	        $allocated_campaign = null;
+	        $device_details = $request->get('device_detail');
+	        $device_uuid = $request->get('deviceId');
+	        if(is_array($device_uuid)){
+	        	$device_uuid = $device_uuid['uuid'];
+	        }
+	        $app_version = $request->get('appversion');
+	        
+	        $locality = $request->get('locality');
+	       
+	        $subAdministrativeArea = $request->get('subAdministrativeArea');
+	        
+	         	// return response()->json([$device_uuid]);
+	         	// return response()->json(['locality'=>$locality]);
+	         
+	        if($user->user_id){
+	        
+	        	$parent =(!empty($user->user_id))? $user->parent_user:$user;
+	        	$parent_id = $parent->id;
+	        	// return json_encode($parent->plan,200);
+	        	// exit;
+	        	
+	        	if($parent->plan->no_of_device <= $parent->alldevices()->where('device_type','app')->whereIn('status',[1,2])->count()){
+	        		
+	        		return response()->json([
+		                'errors' => [$parent->alldevices()->whereIn('status',[1,2])->count().'Devices already login. Please contect your Admin'],
+		                'success'=>false
+		            ],200);
+	        	}
+	        }
+	        
+	    	if($user->mydevices()->where('device_type','app')->count() > 0){
+	        	
+	        	$token_ids = $user->mydevices()->where('device_type','app')->pluck('token_id');
+	        	$user->tokens()->whereIn('id',$token_ids)->delete();
+	        	$allocated_campaign = $user->mydevices()->where('device_uuid','=',$device_uuid)->first();
+				if($allocated_campaign){
+					$allocated_campaign=$allocated_campaign->campaign_id;
+				}
+				
+	        	// $user->mydevices()->delete();
+	        	Device::where('device_uuid','=',$device_uuid)->delete();
+	        	
+	        }
+        }else{
+        	if($user->user_id != null){
+        		return response()->json([
+		                'errors' => ["You are subuser, you don't have permission to login in user panel"],
+		                'success'=>false
+		            ],200);
+        		
+        	}
+        }
+        
+        $token = $user->createToken('token');
+        $user->token = $token->plainTextToken;
+        $cookie = cookie( 'jwt', $user->token, 60*24 );
+        $device_type = ($request->get('device_type') == 'app')?'app':'web';
+     
+        if($device_type == 'app'){
+	        
+	        	// return response()->json(['user'=>$user]);
+	        
+	        $device = $user->mydevices()->create([
+	        	'token_id'=>$token->accessToken->id,
+	        	'parent_user_id'=>$parent_id,
+	            'name'=>(array_key_exists("name",$device_details)) ? $device_details['name']:'browser',
+	            'manufacturer'=>$device_details['manufacturer'],
+	            'device_type'=>$device_type,
+	            'platform'=>$device_details['platform'],
+	            'model'=>$device_details['model'],
+	            'operating_system'=>$device_details['operatingSystem'],
+	            'osversion'=>$device_details['osVersion'],
+	            'device_uuid'=>$device_uuid,
+	            'app_version'=>$app_version,
+	            'campaign_id'=>$allocated_campaign
+	            
+	            //default status = 1; status 0 for logout, 1 for loginn and online, 2 for login but offline
+	            
+	        ]);
+	        
+	        if(!empty($locality)){
+	            $device->locality = $locality;
+	            $device->subAdministrativeArea = $subAdministrativeArea;
+		        $device->save();
+	        }
+	        
+        	$notification_settings = NotificationSettings::where('user_id',$user->id)->first();
+			 if($notification_settings && $notification_settings->device_connected == 1){
+	        	Mail::to($user['email'])->send(new UserDeviceLogin(['first_name' => $user['first_name'],'device'=>$device]));
+	        }
+        }
+         //$user = User::where('id', Auth::id())->with(['parent_user', 'sub_users', 'sub_user_invitations', 'plan'])->first();
+        $user->profile_picture = !empty($user->profile_picture) ? asset($user->profile_picture):'';//asset('profile_pictures/default.png');
+        foreach($user->sub_user_invitations as $key => $invitation){
+        	if($invitation->status = "invited"){
+        		$user->sub_user_invitations[$key]->status = "Pending";
+        	}
+        }
+        // $billingProfile = $user->billing_profile;
+        $userDetails = $user->toArray();
+        $userDetails['site_url']= env('SITE_URL', "https://sandbox.smavio.de");
+        $userDetails['errors']=[];
+        $userDetails['success']=true;
         return response()->json($userDetails, 200)->withCookie($cookie);
     }
 
